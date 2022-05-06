@@ -100,7 +100,7 @@ while [[ $# -ge 1 ]]; do
       ipDNS="$1"
       shift
       ;;
-    --dev-net)
+    --eth0)
       shift
       setInterfaceName='1'
       ;;
@@ -254,7 +254,7 @@ function diskType(){
 
 function getGrub(){
   Boot="${1:-/boot}"
-  folder=`find "$Boot" -type d -name "grub*" 2>/dev/null |head -n1`
+  folder=`find "$Boot" -type d -name "grub*" 2>/dev/null |sort -r |head -n1`
   [ -n "$folder" ] || return
   fileName=`ls -1 "$folder" 2>/dev/null |grep '^grub.conf$\|^grub.cfg$'`
   if [ -z "$fileName" ]; then
@@ -547,18 +547,17 @@ if [[ "$loaderMode" == "0" ]]; then
   LinuxIMG="$(grep 'initrd.*/' /tmp/grub.new |awk '{print $1}' |tail -n 1)";
   [ -z "$LinuxIMG" ] && sed -i "/$LinuxKernel.*\//a\\\tinitrd\ \/" /tmp/grub.new && LinuxIMG='initrd';
 
-  [[ "$setInterfaceName" == "1" ]] && Add_OPTION="net.ifnames=0 biosdevname=0" || Add_OPTION=""
-  [[ "$setIPv6" == "1" ]] && Add_OPTION="$Add_OPTION ipv6.disable=1"
-  
-  lowMem || Add_OPTION="$Add_OPTION lowmem=+0"
+  lowMem || Add_OPTION=" lowmem=+0"
 
   if [[ "$linux_relese" == 'debian' ]] || [[ "$linux_relese" == 'ubuntu' ]]; then
-    BOOT_OPTION="auto=true $Add_OPTION hostname=$linux_relese domain= quiet"
+    BOOT_OPTION="auto=true priority=critical$Add_OPTION netcfg/hostname=`echo $IPv4|sed 's/\./-/g'` domain= ---"
   elif [[ "$linux_relese" == 'centos' ]]; then
-    BOOT_OPTION="ks=file://ks.cfg $Add_OPTION ksdevice=$interfaceSelect"
+    BOOT_OPTION="ks=file://ks.cfg$Add_OPTION ksdevice=$interfaceSelect"
   fi
   
-  [ -n "$setConsole" ] && BOOT_OPTION="$BOOT_OPTION --- console=$setConsole"
+  [ -n "$setConsole" ] && BOOT_OPTION="$BOOT_OPTION console=$setConsole"
+  [[ "$setInterfaceName" == "1" ]] && BOOT_OPTION="$BOOT_OPTION net.ifnames=0 biosdevname=0"
+  [[ "$setIPv6" == "1" ]] && BOOT_OPTION="$BOOT_OPTION ipv6.disable=1"
 
   [[ "$Type" == 'InBoot' ]] && {
     sed -i "/$LinuxKernel.*\//c\\\t$LinuxKernel\\t\/boot\/vmlinuz $BOOT_OPTION" /tmp/grub.new;
@@ -610,10 +609,10 @@ $UNCOMP < /tmp/$NewIMG | cpio --extract --verbose --make-directories --no-absolu
 
 if [[ "$linux_relese" == 'debian' ]] || [[ "$linux_relese" == 'ubuntu' ]]; then
 cat >/tmp/boot/preseed.cfg<<EOF
-d-i debian-installer/locale string en_US
+d-i debian-installer/locale string en_US.UTF-8
 d-i console-setup/layoutcode string us
 
-d-i keyboard-configuration/xkb-keymap string us
+d-i keyboard-configuration/xkb-keymap select us
 
 d-i netcfg/choose_interface select $interfaceSelect
 
@@ -655,20 +654,19 @@ cp -f '/net.bat' './net.bat'; \
 /sbin/reboot; \
 umount /media || true; \
 
+d-i partman-auto/expert_recipe string\
+ boot-root :: 500 10000 1000000000 ext4 method{ format } format{ } use_filesystem{ } filesystem{ ext4 } mountpoint{ / } .
+d-i partman-basicfilesystems/no_swap boolean false
+d-i partman-swapfile/percentage text 0
 d-i partman-partitioning/confirm_write_new_label boolean true
-d-i partman/mount_style select uuid
 d-i partman/choose_partition select finish
 d-i partman-auto/method string regular
-d-i partman-auto/init_automatically_partition select Guided - use entire disk
-d-i partman-auto/choose_recipe select All files in one partition (recommended for new users)
 d-i partman-md/device_remove_md boolean true
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-lvm/confirm boolean true
 d-i partman-lvm/confirm_nooverwrite boolean true
 d-i partman/confirm boolean true
 d-i partman/confirm_nooverwrite boolean true
-
-d-i debian-installer/allow_unauthenticated boolean true
 
 tasksel tasksel/first multiselect minimal
 d-i pkgsel/update-policy select none
@@ -689,6 +687,11 @@ sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/g' /target/etc
 echo '@reboot root cat /etc/run.sh 2>/dev/null |base64 -d >/tmp/run.sh; rm -rf /etc/run.sh; sed -i /^@reboot/d /etc/crontab; bash /tmp/run.sh' >>/target/etc/crontab; \
 echo '' >>/target/etc/crontab; \
 echo '${setCMD}' >/target/etc/run.sh;
+EOF
+
+# Fix Ubuntu 20.04 LTS VNC boot not entering tty1
+[ "$DIST" == 'focal' ] && tee -a /tmp/boot/preseed.cfg<<EOF
+d-i debian-installer/splash boolean false
 EOF
 
 if [[ "$loaderMode" != "0" ]] && [[ "$setNet" == '0' ]]; then
@@ -790,5 +793,3 @@ else
   [[ -f "/boot/vmlinuz" ]] && rm -rf "/boot/vmlinuz"
   echo && ls -AR1 "$HOME/loader"
 fi
-
-

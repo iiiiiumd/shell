@@ -22,7 +22,7 @@ kernelVer=$(uname -r |cut -d- -f1 |cut -d. -f1-2)
 wget -qO /tmp/tcp_bbr.c "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/plain/net/ipv4/tcp_bbr.c?h=v${kernelVer}"
 [ $? -ne 0 ] && echo "Invalid Kernel Version." && exit 1
 
-wget -qO /tmp/Makefile "https://github.com/MoeClub/BBR/raw/master/Makefile"
+wget -qO /tmp/Makefile "https://github.com/iiiiiumd/shell/raw/main/BBR/Makefile"
 [ $? -ne 0 ] && echo "Invalid Make File." && exit 1
 
 
